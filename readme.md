@@ -75,7 +75,7 @@ def login(args):
 
 The server-supplied `args` value looks something like this, and changes to the provided value will be reflected in the server answer:
 
-```json
+```py
 {
     "query_string": {},
     "flags": [],
