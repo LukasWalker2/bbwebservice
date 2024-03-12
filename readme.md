@@ -58,4 +58,12 @@ If you intend to keep the application centrally (online), it is recommended to s
 - 443: For HTTP (SSL = false)
 - 80: For HTTP (SSL = false)
 
+## logging
+
+```py
+set_logging(LOGGING_OPTIONS.INFO,True)
+set_logging(LOGGING_OPTIONS.DEBUG,True)
+set_logging(LOGGING_OPTIONS.ERROR,True)
+```
+
 ![console example](console_example.png)
