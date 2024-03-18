@@ -127,7 +127,7 @@ If you intend to keep the application centrally (online), it is recommended to s
 ### Recommended Ports
 
 - 5000: For testing purposes
-- 443: For HTTP (SSL = false)
+- 443: For HTTPS (SSL = true)
 - 80: For HTTP (SSL = false)
 
 ## Logging
