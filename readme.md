@@ -107,6 +107,14 @@ def main():
 start()
 ```
 
+8. With URL-templating you are able to match dynamic URLs like `/test/paul/1456379827256`
+
+```py
+@register(route= UrlTemplate('/test/{name:str}/{id:int}'), type=MIME_TYPE.TEXT)
+def test():
+    return str(args[STORE_VARS.TEMPLATE_VARS])
+```
+
 ## Server Configuration
 
 In the directory `/config`, there is a file named `config.json`. Here you can configure:
@@ -133,6 +141,7 @@ If you intend to keep the application centrally (online), it is recommended to s
 ## Logging
 
 ```python
+log_to_file()
 set_logging(LOGGING_OPTIONS.INFO, True)
 set_logging(LOGGING_OPTIONS.DEBUG, True)
 set_logging(LOGGING_OPTIONS.ERROR, True)

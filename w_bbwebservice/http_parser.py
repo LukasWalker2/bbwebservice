@@ -1,18 +1,38 @@
 import socket
 import re
-import urllib.parse
 from datetime import datetime
 import time
+from . import url_utils
 from .special_media_type import PartialContent
 from .special_media_type import Redirect
 
 import traceback
 
 HEADER_SIZE_MAX = 8000
-LOGGING_OPTIONS:dict = {'response':False, 'request':False, 'debug':False, 'info':False, 'warning':False, 'error':False, 'critical':False}
+
+LOGGING_OPTIONS:dict = {'response':False, 'request':False, 'debug':False, 'info':False, 'warning':False, 'error':False, 'critical':False, 'time':False}
+LOGGING_CALLBACK = []
+
+def get_http_date():
+    now = datetime.utcnow()
+    timestamp = time.mktime(now.timetuple())
+    http_date = time.strftime('%a, %d %b %Y %H:%M:%S GMT', time.gmtime(timestamp))
+    return http_date
 
 def log(*msg, log_lvl='info', sep=None) -> None:
     #TODO: Encoding safe logging
+    if LOGGING_OPTIONS['time']:
+        msg = (f'({get_http_date()})', *msg)
+    if LOGGING_CALLBACK:
+        try:
+            message = sep.join(map(str, msg)) if sep else ' '.join(map(str, msg))
+            time_stamp = get_http_date()
+            for callback in LOGGING_CALLBACK:
+                callback(message ,time_stamp ,log_lvl)
+        except Exception as e:
+            
+            log('[LOGGING]',e ,log_lvl='debug') 
+                   
     if sep and LOGGING_OPTIONS[log_lvl]:
         print(*msg, sep=sep)
     elif LOGGING_OPTIONS[log_lvl]:
@@ -45,11 +65,6 @@ def merge_dicts(*dicts):
         result.update(d.copy())
     return result
     
-def get_http_date():
-    now = datetime.utcnow()
-    timestamp = time.mktime(now.timetuple())
-    http_date = time.strftime('%a, %d %b %Y %H:%M:%S GMT', time.gmtime(timestamp))
-    return http_date
 
 class HTTP_Message_Type:
     REQUEST = 'REQUEST'
@@ -441,16 +456,18 @@ class HTTP_Response:
 
 
 class HTTP_Message_Factory:
-    def __init__(self, connection:socket.socket, addr, get_handler:dict, post_handler:dict, error_handler:dict) -> None:
+    def __init__(self, connection:socket.socket, addr, get_handler:dict, get_templates:list, post_handler:dict, post_templates:list ,error_handler:dict) -> None:
         try:
             self.stay_alive:bool = False
             self.get_handler:dict = get_handler
+            self.get_templates:list = get_templates
+            self.post_templates:list = post_templates
             self.post_handler:dict = post_handler
-
             self.error_handler:dict = error_handler
             
             raw_message,_,post = connection.recv(HEADER_SIZE_MAX).partition(b'\r\n\r\n')
             
+            self.mime_type = Mime_Type.TEXT
             self.post = bytearray(post)
             self.message_temp = str(raw_message,'utf-8')
             self.connection = connection
@@ -470,13 +487,6 @@ class HTTP_Message_Factory:
         except Exception as e:
             log(f'[PARSER] error: {e.args[0]}', log_lvl='debug')
 
-    def handler(self, method):
-        res = {
-            HTTP_Method.GET : self.get_handler,
-            HTTP_Method.POST : self.post_handler 
-            }
-
-        return res[method]
 
     def get_message(self) -> bytes:
         status = self.response_message.http_status_code
@@ -531,10 +541,20 @@ class HTTP_Parser():
         if self.http_message_method == HTTP_Method.GET:
             if self.http_request_path in self.http_message_factory.get_handler:
                 handler = self.http_message_factory.get_handler[self.http_request_path][0]
+                self.http_message_factory.mime_type = self.http_message_factory.get_handler[self.http_request_path][1]
                 if handler.__code__.co_argcount == 1:
                     content = approach(handler, args=(self.args,), switch=self.http_request_path)
                 else:
                     content = approach(handler, switch=self.http_request_path)
+            elif template := next((x for x in self.http_message_factory.get_templates if x == self.http_request_path), None):
+                handler = template.handler
+                self.args['template_args'] = template.extract(self.http_request_path)
+                self.http_message_factory.mime_type = template.type
+                if handler.__code__.co_argcount == 1:
+                    content = approach(handler, args=(self.args,), switch=self.http_request_path)
+                else:
+                    content = approach(handler, switch=self.http_request_path)
+                
             else:
                 self.http_message_factory.response_message.set_status(HTTP_Status_Code.NOT_FOUND)
                 #TODO: check for other err
@@ -542,10 +562,21 @@ class HTTP_Parser():
         if self.http_message_method == HTTP_Method.POST:
             if self.http_request_path in self.http_message_factory.post_handler:
                 handler = self.http_message_factory.post_handler[self.http_request_path][0]
+                self.http_message_factory.mime_type = self.http_message_factory.post_handler[self.http_request_path][1]
                 if handler.__code__.co_argcount == 1:
                     content = approach(handler, args=(self.args,), switch=self.http_request_path)
                 else:
                     content = approach(handler, switch=self.http_request_path)
+                    
+            elif template := next((x for x in self.http_message_factory.post_templates if x == self.http_request_path), None):
+                handler = template.handler
+                self.args['template_args'] = template.extract(self.http_request_path)
+                self.http_message_factory.mime_type = template.type
+                if handler.__code__.co_argcount == 1:
+                    content = approach(handler, args=(self.args,), switch=self.http_request_path)
+                else:
+                    content = approach(handler, switch=self.http_request_path)
+    
             else:
                 self.http_message_factory.response_message.set_status(HTTP_Status_Code.NOT_FOUND)
                 #check if in other paths and if not 400err
@@ -562,12 +593,12 @@ class HTTP_Parser():
             pass
         
         if isinstance(content, bytes):
-            content_type_header = HTTP_Message_Header_Line(HTTP_Message_Response_Header_Tag.CONTENT_TYPE,self.http_message_factory.handler(self.http_message_method)[self.http_request_path][1])
+            content_type_header = HTTP_Message_Header_Line(HTTP_Message_Response_Header_Tag.CONTENT_TYPE,self.http_message_factory.mime_type)
             self.http_message_factory.response_message.header.add_header_line(content_type_header)
             self.http_message_factory.response_message.set_status(HTTP_Status_Code.OK)
             self.http_message_factory.response_message.append_content(content)
         if isinstance(content, str):
-            content_type_header = HTTP_Message_Header_Line(HTTP_Message_Response_Header_Tag.CONTENT_TYPE,[self.http_message_factory.handler(self.http_message_method)[self.http_request_path][1],'charset=utf-8'])
+            content_type_header = HTTP_Message_Header_Line(HTTP_Message_Response_Header_Tag.CONTENT_TYPE,[self.http_message_factory.mime_type,'charset=utf-8'])
             self.http_message_factory.response_message.header.add_header_line(content_type_header)
             self.http_message_factory.response_message.set_status(HTTP_Status_Code.OK)
             self.http_message_factory.response_message.append_content(content.encode('utf-8'))
@@ -580,7 +611,7 @@ class HTTP_Parser():
                 end = range[1] if range[1] else start + partial_content.default_size
                 content = content.get_range(start,end)
                 content_type_header = HTTP_Message_Header_Line(HTTP_Message_Response_Header_Tag.CONENT_RANGE,f'bytes {start}-{min(end,partial_content.get_size()-1)}/{partial_content.get_size()}')
-                content_type_header1 = HTTP_Message_Header_Line(HTTP_Message_Response_Header_Tag.CONTENT_TYPE,self.http_message_factory.handler(self.http_message_method)[self.http_request_path][1])
+                content_type_header1 = HTTP_Message_Header_Line(HTTP_Message_Response_Header_Tag.CONTENT_TYPE,self.http_message_factory.mime_type)
                 self.http_message_factory.response_message.header.add_header_line(content_type_header)
                 self.http_message_factory.response_message.header.add_header_line(content_type_header1)
                 self.http_message_factory.response_message.set_status(HTTP_Status_Code.PARTIAL_CONTENT)
@@ -652,7 +683,7 @@ class HTTP_Parser():
         for pair in key_value:
             p = pair.split('=')
             if len(p) == 2:
-                inner_args[urllib.parse.unquote(p[0])] = urllib.parse.unquote(p[1])
+                inner_args[url_utils.unescape_url(p[0])] = url_utils.unescape_url(p[1])
         self.args['query_string'] = inner_args
    
 
@@ -662,6 +693,7 @@ class HTTP_Parser():
             self.args = {   
                             'query_string':{},
                             'flags':[],
+                            'template_args':{},
                             'cookies': {},
                             'address': self.http_message_factory.addr,
                             'post' : self.http_message_factory.post,
@@ -674,9 +706,12 @@ class HTTP_Parser():
             
             #Parse query_string 
             if len(path_tokens) == 2:
-                self.http_request_path = path_tokens[0]
+                self.http_request_path = url_utils.unescape_url(path_tokens[0])
                 self.get_query_string(path_tokens[1])
-
+            else:
+                self.http_request_path = url_utils.unescape_url(path_tokens[0])
+                
+                
             self.http_message_factory.response_message.set_protocol(self.http_protocol)
 
             if self.http_message_factory.response_message.protocol_version == HTTP_Protocol_Version.HTTP_1_1:

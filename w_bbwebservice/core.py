@@ -3,17 +3,20 @@ from threading import Thread, Event, current_thread
 import ssl
 import os
 from .config_loader import *
-from .http_parser import HTTP_Message_Factory, LOGGING_OPTIONS, log
+from .http_parser import HTTP_Message_Factory, LOGGING_OPTIONS, LOGGING_CALLBACK ,log
 
 SESSIONS:dict = {}
 PAGES:dict = {}
+GET_TEMPLATES:list= []
 POST_HANDLER:dict = {}
+POST_TEMPLATES:list = []
 
 ERROR_HANDLER:dict = {}
 
 SERVER_THREADS:list = []
 CONFIG = Config()
-SERVER_LOGGING:dict = LOGGING_OPTIONS
+
+
 
 
 def servlet(conn, addr, worker_state) -> None:
@@ -26,7 +29,7 @@ def servlet(conn, addr, worker_state) -> None:
 
             log(f'[THREADING] thread {current_thread().ident} listens now.', log_lvl='debug')
 
-            message_factory = HTTP_Message_Factory(conn,addr,PAGES,POST_HANDLER,ERROR_HANDLER)
+            message_factory = HTTP_Message_Factory(conn,addr,PAGES,GET_TEMPLATES,POST_HANDLER,POST_TEMPLATES,ERROR_HANDLER)
             resp = message_factory.get_message()
             conn.sendall(resp)
             
@@ -60,18 +63,18 @@ def main(server:socket.socket,state:Event) ->None:
         SERVER_THREADS = [t for t in SERVER_THREADS if t[0].is_alive()]
         try:
             conn,addr = server.accept()
-            conn.settimeout(60)
             worker_state = Event()
             worker_state.set()
             if conn:
                 worker_thread = Thread(target=servlet , args = [conn, addr, worker_state])
                 SERVER_THREADS.append([worker_thread,worker_state,conn])
                 worker_thread.start()
+                conn.settimeout(15)
         except TimeoutError:
             pass
-        except:
+        except Exception as e:
             if state.is_set():
-                print('[CONNECTION_ERROR] a connection failed.')
+                log(f'[CONNECTION_ERROR] a connection failed due to the following Error: {e}.\n', log_lvl='debug')
 
 def start():
 
@@ -81,24 +84,25 @@ def start():
     if CONFIG.SERVER_IP == 'default':
         CONFIG.SERVER_IP = socket.gethostbyname(socket.gethostname())
     try:
+        socket.setdefaulttimeout(2)
         server = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
         server.bind((CONFIG.SERVER_IP,CONFIG.SERVER_PORT))
         server.listen(CONFIG.QUE_SIZE)
-        server.settimeout(2.0)
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         if CONFIG.SSL:
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             context.load_cert_chain(CONFIG.CERT_PATH,CONFIG.KEY_PATH)
             server = context.wrap_socket(server, server_side=True)
 
-    except:
-        print('[SERVER] error while attempting to start the server\n')
+    except Exception as e:
+        log(f'[SERVER] error while attempting to start the server {e}\n', log_lvl='debug')
         system.exit(0)
         
     server_state = Event()
     server_state.set()
     server_thread = Thread(target=main , args = [server,server_state])
     server_thread.start()
+    
     while True:
        state = input()
        if state in ['quit', 'q', 'exit', 'e', 'stop']:

@@ -1,4 +1,4 @@
-import urllib
+from . import url_utils
 
 def urlencoded_to_dict(args)-> dict:
 
@@ -14,5 +14,5 @@ def urlencoded_to_dict(args)-> dict:
     for pair in key_value:
         p = pair.split('=')
         if len(p) == 2:
-            result[urllib.parse.unquote(p[0])] = urllib.parse.unquote(p[1]).replace('+',' ')
+            result[url_utils.unescape_url(p[0])] = url_utils.unescape_url(p[1]).replace('+',' ')
     return result

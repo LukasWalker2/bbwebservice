@@ -6,6 +6,7 @@ from . import core
 from .__init__ import MAIN_PATH
 from .app_utils import urlencoded_to_dict
 from .http_parser import Redirect
+from .url_utils import UrlTemplate 
 from .http_parser import PartialContent
 from .http_parser import HTTP_Status_Code
 from .http_parser import HTTP_Response as Response
@@ -36,6 +37,7 @@ class STORE_VARS:
     POST = 'post'
     FLAGS = 'flags'
     REQUEST_HEADER = 'request_header'
+    TEMPLATE_VARS = 'template_args'
     
 
 class LOGGING_OPTIONS:
@@ -49,6 +51,7 @@ class LOGGING_OPTIONS:
     WARNING = 'warning'
     ERROR = 'error'
     CRITICAL = 'critical'
+    TIME = 'time'
 
 def register(*args, **kwargs):
 
@@ -75,8 +78,13 @@ def register(*args, **kwargs):
         raise Exception('The "type" argument is missing.')
     route = kwargs['route']
     def inner(func):
-        if kwargs['route'] not in core.PAGES:
+        if isinstance(route, str) and route not in core.PAGES:
                 core.PAGES[route] = [func,kwargs['type']]
+        
+        if isinstance(route, UrlTemplate) and route not in core.GET_TEMPLATES:
+                route.type = kwargs['type']
+                route.handler = func
+                core.GET_TEMPLATES.append(route)
         return func            
     return inner
 
@@ -108,9 +116,15 @@ def post_handler(*args, **kwargs):
     def inner(func):
         if func.__code__.co_argcount != 1:
             raise Exception('The function decorated with the post_handler decorater has to\n accept one Argument "args":dict')
-        if kwargs['route'] not in core.POST_HANDLER:
+
+        if isinstance(route, str) and route not in core.POST_HANDLER:
                 core.POST_HANDLER[route] = [func,kwargs['type']]
-        return func            
+                
+        if isinstance(route, UrlTemplate) and route not in core.POST_TEMPLATES:
+                route.type = kwargs['type']
+                route.handler = func
+                core.POST_TEMPLATES.append(route)
+        return func                  
     return inner
 
 
@@ -208,13 +222,39 @@ def is_partial(args) -> bool:
     return 'partial' in args[STORE_VARS.FLAGS]
 
 
-def set_logging(option:str,state:bool) -> None:
-    if option in core.SERVER_LOGGING:
-        core.SERVER_LOGGING[option] = state
-        print(f'[LOGGER] logging-option "{option}" set to {state}.')
+def set_logging(option:str, state:bool) -> None:
+    if option in core.LOGGING_OPTIONS:
+        core.LOGGING_OPTIONS[option] = state
+        print(f'[LOGGING] logging-option "{option}" set to {state}.')
     else:
-        print(f'[LOGGER] Error there is no logging-option called "{option}".')
+        print(f'[LOGGING] Error: There is no logging-option called "{option}".')
 
+def set_logging_callback(callback):
+    try:
+        assert callable(callback), 'The logging callback is not a callable'
+        assert callback.__code__.co_argcount == 3, 'The logging callback needs to accept 3 arguments (message, time_stamp, loglvl)'
+        core.LOGGING_CALLBACK.append(callback)
+        print('[LOGGING]', "Logging callback has been set")
+        
+    except Exception as e:
+        print('[LOGGING]','Error:',e)
+
+def log_to_file(path='/log.txt', logging_options=[LOGGING_OPTIONS.DEBUG]):
+    try:
+        for option in logging_options:
+            assert option in core.LOGGING_OPTIONS, f'log_to_file: There is no logging-option called "{option}".'
+
+        def file_writer_callback(message, time_stamp, loglvl):
+            if  loglvl in logging_options:
+                with open(MAIN_PATH+path,'a') as file:
+                    file.write(f'({time_stamp}) {message}\n')
+        core.LOGGING_CALLBACK.append(file_writer_callback)
+        print('[LOGGING]', f"File-logging has been activated path= {path}")
+        
+    except Exception as e:
+        print('[LOGGING]', e)
+        
+    
  
 def get_pages() -> dict:
     return core.PAGES
