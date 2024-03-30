@@ -534,6 +534,9 @@ class HTTP_Parser():
         self.http_message_factory.response_message.header.add_header_line(date)
         self.http_message_factory.response_message.header.add_header_line(server)
 
+
+#TODO 1: Refector that hot mess  
+
     def set_content(self) -> None:
 
         content = None

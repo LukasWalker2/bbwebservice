@@ -61,7 +61,7 @@ class UrlTemplate:
             return int(value)
         elif type_ == 'float':
             return float(value)
-        elif type_ == 'float':
+        elif type_ == 'bool':
             return bool(value)
         else:
             return value
