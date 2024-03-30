@@ -111,7 +111,7 @@ start()
 
 ```py
 @register(route= UrlTemplate('/test/{name:str}/{id:int}'), type=MIME_TYPE.TEXT)
-def test():
+def test(args):
     return str(args[STORE_VARS.TEMPLATE_VARS])
 ```
 
