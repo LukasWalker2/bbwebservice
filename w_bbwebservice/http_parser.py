@@ -15,8 +15,7 @@ LOGGING_CALLBACK = []
 
 def get_http_date():
     now = datetime.utcnow()
-    timestamp = time.mktime(now.timetuple())
-    http_date = time.strftime('%a, %d %b %Y %H:%M:%S GMT', time.gmtime(timestamp))
+    http_date = now.strftime('%a, %d %b %Y %H:%M:%S GMT')
     return http_date
 
 def log(*msg, log_lvl='info', sep=None) -> None:
