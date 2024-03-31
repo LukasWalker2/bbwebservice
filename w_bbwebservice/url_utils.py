@@ -1,40 +1,62 @@
 
-HEX_CHARS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F']
 import re
+HEX_CHARS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F']
+
+
+#TODO: unefficient af fix that 
+
+def leading_ones_count(encoded_byte):
+    byte_value = int(encoded_byte, 16)
+    count = 0
+    mask = 0x80 
+    while mask != 0 and byte_value & mask:
+        count += 1
+        mask >>= 1
+    return count
 
 def unescape_url(url:str) -> str:
     unescaped = ''
     escape_sequence = ''
     index = 0
+    count = 0
     url_len = len(url)
     
     while index < url_len:
-        if url[index] == '%' and index + 3 <= url_len and url[index+1] in HEX_CHARS and url[index+2] in HEX_CHARS and len(escape_sequence) <= 6:
-            escape_sequence += url[index:index+3]
+        
+        if len(escape_sequence) == 0 and url[index] == '%' and index + 3 <= url_len and url[index+1] in HEX_CHARS and url[index+2] in HEX_CHARS:
+            escape_byte = url[index+1:index+3]
+            count =  leading_ones_count(escape_byte)
+            escape_sequence += escape_byte
             index += 3
+            
+        elif url[index] == '%' and index + 3 <= url_len and url[index+1] in HEX_CHARS and url[index+2] in HEX_CHARS and count > 1:
+            escape_byte = url[index+1:index+3]
+            count -= 1
+            escape_sequence+= escape_byte
+            index += 3
+            
         elif escape_sequence:
-            unescaped += decode_url_encoded_string(escape_sequence)
-            unescaped += url[index]
+            unescaped += decode_hex_string(escape_sequence)
             escape_sequence = ''
-            index += 1
+            count = 0
         else:
             unescaped += url[index]
             index += 1
-    return unescaped
+
+    return unescaped if not escape_sequence else unescaped + decode_hex_string(escape_sequence)
             
 
-def decode_url_encoded_string(url_encoded_string:str) ->str:
+def decode_hex_string(hex_string:str) ->str:
     try:
-        encoded_parts = url_encoded_string.split('%')[1:]
-        decoded_bytes = bytes([int(part[:2], 16) for part in encoded_parts])
+        decoded_bytes = bytes.fromhex(hex_string)
         unicode_char = decoded_bytes.decode('utf-8')
         return unicode_char
     except UnicodeDecodeError:
-        return None
+        return ''
 
 
 #TODO: native URL matching withoug re for better performance 
-#TODO: special hashing were string gets hash of matching template 
+#TODO: special hashing where string gets hash of matching template 
 class UrlTemplate:
     
     def __init__(self, template_string):
@@ -81,3 +103,4 @@ class UrlTemplate:
             return self.template == url.template
         
         return False
+
