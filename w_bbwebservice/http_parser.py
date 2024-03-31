@@ -29,8 +29,7 @@ def log(*msg, log_lvl='info', sep=None) -> None:
             for callback in LOGGING_CALLBACK:
                 callback(message ,time_stamp ,log_lvl)
         except Exception as e:
-            
-            log('[LOGGING]',e ,log_lvl='debug') 
+            print('[LOGGING]',e) 
                    
     if sep and LOGGING_OPTIONS[log_lvl]:
         print(*msg, sep=sep)
